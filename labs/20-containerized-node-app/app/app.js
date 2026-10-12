@@ -6,7 +6,7 @@ import postgres from "@fastify/postgres";
 
 export async function buildApp() {
   // Create Fastify instance
-  const app = Fastify(({ logger: true });
+  const app = Fastify({ logger: true });
 
   // Register plugins
   await app.register(postgres, {
