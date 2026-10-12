@@ -41,6 +41,10 @@ jobs:
         working-directory: labs/20-containerized-node-app/app
         run: npm ci
 
+      - name: Run unit tests
+        working-directory: labs/20-containerized-node-app/app
+        run: npm test
+
       - name: Check JavaScript syntax
         working-directory: labs/20-containerized-node-app/app
         run: |
