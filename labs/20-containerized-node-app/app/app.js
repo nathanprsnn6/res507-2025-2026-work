@@ -21,6 +21,10 @@ export async function buildApp() {
   // Health check endpoint
   app.get("/health", async () => ({ ok: true }));
 
+  app.get("/route-inexistante", async (req, reply) => {
+    // On force un statut 200 (succès) au lieu du 404 attendu
+    return reply.code(200).send({ message: "Surprise, la route existe !" });
+  });
   // Get all quotes endpoint
   app.get("/", async (_req, reply) => {
     /******* TODO SELECT quotes from DB ******/
