@@ -1,17 +1,17 @@
-name: CI Preview
+# name: CI Preview
 
-on:
-  push:
+# on:
+#   push:
 
-jobs:
-  preview:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+# jobs:
+#   preview:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
 
-      - name: Run preview script
-        run: ./scripts/ci-preview.sh
+#       - name: Run preview script
+#         run: ./scripts/ci-preview.sh
 
 
 
