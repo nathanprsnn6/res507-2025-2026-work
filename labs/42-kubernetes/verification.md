@@ -131,11 +131,40 @@ quote-app-7d6744749f-kv7hn   1/1     Running   0          14m
 
 4. Extension: Resource Limits and Requests
 
-A. Change: Added `requests` (100m CPU / 128Mi RAM) and `limits` (250m CPU / 256Mi RAM) to the container spec in `deployment.yaml`.
+A. Change: Added requests (100m CPU / 128Mi RAM) and limits (250m CPU / 256Mi RAM) to the container spec in deployment.yaml.
 
 B. Verification Result:
-```bash
-[Copiez-collez ici l'extrait de 'kubectl describe pod <nom-du-pod>' montrant le bloc "Limits:" et "Requests:"]
-```
+tetras@devops-vm:~/res507-2025-2026-work/labs/42-kubernetes$ kubectl describe pod quote-app-7d6744749f-hng6k -n quote-lab
+Name:             quote-app-7d6744749f-hng6k
+Namespace:        quote-lab
+Priority:         0
+Service Account:  default
+Node:             devops-vm/10.0.2.15
+Start Time:       Mon, 19 Oct 2026 06:19:37 +0000
+Labels:           app=quote-app
+                  pod-template-hash=7d6744749f
+Annotations:      <none>
+Status:           Running
+IP:               10.42.0.34
+IPs:
+  IP:           10.42.0.34
+Controlled By:  ReplicaSet/quote-app-7d6744749f
+Containers:
+  quote-app:
+    Container ID:   containerd://05d545093efa11e7a18c49adcdb61b1670d3bca4d923ddc02b333255c8ffe4a0
+    Image:          quote-app:local
+    Image ID:       sha256:9d6fac681b41c528b2519e04b622341ad9f5b1e8679fd08961154f768e49a64e
+    Port:           3000/TCP
+    Host Port:      0/TCP
+    State:          Running
+      Started:      Mon, 19 Oct 2026 06:19:39 +0000
+    Ready:          True
+    Restart Count:  0
+    Limits:
+      cpu:     250m
+      memory:  256Mi
+    Requests:
+      cpu:        100m
+      memory:     128Mi
 
 C. What it demonstrates: This demonstrates resource management and cluster stability. It ensures the application is only scheduled on a node with sufficient baseline resources (requests) and prevents a single pod with a memory leak from crashing the entire host node by enforcing a hard ceiling (limits), resulting in an OOMKilled termination instead of a node failure.
