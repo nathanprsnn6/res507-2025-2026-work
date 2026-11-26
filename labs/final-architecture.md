@@ -1,52 +1,57 @@
 # Problèmes du système actuel
 
-| Domaine | Problème | Conséquence | Solution proposée |
-| :--- | :--- | :--- | :--- |
-| **Scalabilité & Disponibilité** | Un seul Pod exécute un unique réplica de `quote-api`. | Le moindre crash, OOM ou redémarrage provoque une coupure totale du service ; impossible d'absorber un pic de trafic. | Déployer `quote-api` via un `Deployment` avec plusieurs réplicas (`>= 2–3`) répartis sur plusieurs nœuds derrière un `Service`. |
-| **Persistance & Couplage** | PostgreSQL tourne dans le même conteneur que l'application et écrit dans la couche éphémère du conteneur. | Tout redémarrage ou redéploiement efface entièrement la base de données ; impossible de scaler ou redémarrer l'API et la BDD indépendamment. | Isoler PostgreSQL dans son propre `StatefulSet` (ou BDD managée) adossé à un `PersistentVolumeClaim` (PVC) sur un stockage durable. |
-| **Sécurité des déploiements** | Stratégie de mise à jour `Recreate` : l'ancien Pod est arrêté avant la création du nouveau. | Coupure de service garantie à chaque déploiement, et aucune protection si la nouvelle image est défectueuse. | Passer à `RollingUpdate` (`maxUnavailable: 0`, `maxSurge: 1`) conditionné par des sondes de disponibilité (*readiness probes*). |
-| **Détection des pannes** | Aucune sonde (*readiness* ou *liveness probe*) configurée. | Kubernetes envoie du trafic vers des Pods non prêts ou cassés, et ne redémarre jamais un processus bloqué. | Ajouter une `readinessProbe` HTTP (ex. `/health/ready` vérifiant la connexion BDD) et une `livenessProbe` (`/health/live`). |
-| **Gestion des ressources** | Aucune `request` ni `limit` CPU/mémoire définie. | Une fuite mémoire ou un pic de charge peut saturer le nœud et provoquer des OOM-kill sur d'autres workloads. | Définir des `requests` et `limits` réalistes pour `quote-api` et PostgreSQL, complétées par une `LimitRange`. |
-| **Gestion des secrets** | Les identifiants BDD sont écrits en clair dans les variables d'environnement des manifestes Git. | Toute personne ayant accès au dépôt (ou à l'historique Git) récupère les accès BDD ; la rotation des mots de passe impose de modifier le code. | Référencer un `Secret` Kubernetes (`secretKeyRef`) provisionné hors Git (External Secrets Operator, Sealed Secrets ou CI/CD). |
-| **Infrastructure & Reprise** | Un seul nœud et un seul disque local, sans procédure de sauvegarde/restauration testée. | La perte de la VM ou du disque entraîne à la fois une panne totale et une perte définitive des données. | Déployer sur plusieurs nœuds avec anti-affinité, utiliser un stockage réseau répliqué et planifier des sauvegardes hors cluster avec tests de restauration réguliers. |
+* **Un seul Pod pour l'API :** Il n'y a qu'un seul réplica de `quote-api`. Si le conteneur plante ou redémarre, le service est complètement coupé et on ne peut pas encaisser de pic de trafic.  
+  *Fix :* Passer sur un `Deployment` avec 2 ou 3 réplicas répartis sur plusieurs nœuds, exposés derrière un `Service`.
+
+* **Base de données dans le même conteneur que l'API :** PostgreSQL tourne dans le même conteneur que l'app et écrit dans le stockage temporaire. Au moindre redémarrage, toutes les données disparaissent, et impossible de mettre à jour l'API sans couper la BDD.  
+  *Fix :* Séparer PostgreSQL dans son propre `StatefulSet` avec un `PVC` monté sur un stockage persistant.
+
+* **Mises à jour en `Recreate` :** L'ancien Pod est détruit avant que le nouveau soit créé, ce qui impose une coupure à chaque déploiement.  
+  *Fix :* Utiliser `RollingUpdate` (`maxUnavailable: 0`) pour remplacer les Pods un par un sans coupure.
+
+* **Pas de sondes (probes) :** Sans `readinessProbe` ni `livenessProbe`, Kubernetes envoie du trafic vers un Pod qui n'est pas encore prêt et ne redémarre pas un conteneur bloqué.  
+  *Fix :* Ajouter des sondes HTTP sur l'API (`/health/ready` et `/health/live`) et une sonde sur PostgreSQL.
+
+* **Aucune limite de ressources :** Sans `requests` ni `limits`, une fuite mémoire sur l'API peut saturer toute la machine et faire tomber le reste.  
+  *Fix :* Définir des limites CPU et RAM raisonnables sur chaque conteneur.
+
+* **Mots de passe en clair sur Git :** Les identifiants de la BDD sont écrits en dur dans les fichiers YAML. N'importe qui avec accès au repo a les accès à la base.  
+  *Fix :* Utiliser un `Secret` Kubernetes injecté hors Git (via CI/CD ou External Secrets / Sealed Secrets).
+
+* **Un seul serveur et pas de backups :** Tout repose sur une seule VM et son disque local. Si la machine lâche, on perd le service et les données.  
+  *Fix :* Prévoir au moins deux nœuds, un stockage réseau, et des sauvegardes automatiques hors du cluster (avec des tests de restauration).
 
 ---
 
 # Architecture de production
 
-*(Légende : `[Vérifié Lab 52]` = briques validées en lab ; `[Proposé]` = améliorations pour la production.)*
+*(Ce qui est déjà validé dans mon Lab 52 est marqué `[Lab 52]`, le reste correspond à mes ajouts `[Proposé]`.)*
 
 ```mermaid
 flowchart TB
-    U[Utilisateurs / Clients] --> LB[Ingress / LoadBalancer<br/>Terminaison TLS]
+    Users[Utilisateurs] --> Ingress[Ingress / HTTPS - Proposé]
+    Ingress --> SvcAPI[Service quote-api - Lab 52]
 
-    subgraph Cluster["Cluster Kubernetes [Proposé : Multi-Nœuds]"]
-        LB --> SVC_API[Service : quote-api ClusterIP<br/>Vérifié Lab 52]
-
-        subgraph Node1["Nœud Worker 1 [Proposé]"]
-            API1[Pod : quote-api #1<br/>Sondes + Limites]
-            API2[Pod : quote-api #2<br/>Sondes + Limites]
+    subgraph Cluster [Cluster Kubernetes - Multi-nœuds Proposé]
+        subgraph N1 [Nœud 1]
+            API1[Pod quote-api 1]
+            API2[Pod quote-api 2]
         end
 
-        subgraph Node2["Nœud Worker 2 [Proposé]"]
-            API3[Pod : quote-api #3<br/>Sondes + Limites]
-            PG[StatefulSet : postgres-0<br/>Sondes + Limites]
+        subgraph N2 [Nœud 2]
+            API3[Pod quote-api 3]
+            DB[StatefulSet postgres-0]
         end
 
-        SVC_API --> API1
-        SVC_API --> API2
-        SVC_API --> API3
+        SvcAPI --> API1
+        SvcAPI --> API2
+        SvcAPI --> API3
 
-        API1 --> SVC_PG[Service : postgres ClusterIP<br/>Proposé]
-        API2 --> SVC_PG
-        API3 --> SVC_PG
-        SVC_PG --> PG
+        API1 & API2 & API3 --> SvcDB[Service postgres interne - Proposé]
+        SvcDB --> DB
 
-        SEC[Secret K8s : db-credentials<br/>Provisionné via External Secrets / CI<br/>Proposé] -.-> API1
-        SEC -.-> API2
-        SEC -.-> API3
-        SEC -.-> PG
+        Secret[Secret K8s - hors Git] -.-> API1 & API2 & API3 & DB
     end
 
-    PG --> PVC[PVC -> Stockage Bloc Réseau<br/>Proposé]
-    PG -. "pg_dump planifié / archivage WAL" .-> BKP[Sauvegardes Stockage Objet Hors Cluster<br/>Restauration testée - Proposé]
+    DB --> PVC[PVC sur stockage réseau - Proposé]
+    DB -. pg_dump / WAL .-> Backup[Backups externes S3 - Proposé]
